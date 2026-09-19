@@ -87,13 +87,31 @@ jobs:
           ./gradlew build --no-daemon \
             -Pmod_version="${{ steps.version.outputs.version }}"
 
-      - name: Publish GitHub Release (+ CurseForge if configured)
+      # 无 curseforge_project_id：只发 GitHub Release（mc-publish 不传任何 curseforge 参数，
+      # 否则会按 slug 去探测 CurseForge 项目导致失败）。
+      - name: "Publish GitHub Release only"
+        if: ${{ steps.props.outputs.curseforge_project_id == '' }}
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-          # CurseForge 开关：gradle.properties 有 curseforge_project_id 才填，
-          # 为空则 mc-publish 只发 GitHub Release
+          files: build/libs/!(*-@(sources|javadoc|dev|dev-shadow)).jar
+          name: ${{ steps.props.outputs.mod_name }} ${{ steps.version.outputs.version }}
+          version: ${{ steps.version.outputs.version }}
+          version-type: ${{ steps.version.outputs.version_type }}
+          loaders: neoforge
+          game-versions: 1.21.1
+          java: 21
+          environment: client | server
+          fail-mode: fail
+
+      # 有 curseforge_project_id：GitHub Release + CurseForge 一起发。
+      - name: "Publish GitHub Release + CurseForge"
+        if: ${{ steps.props.outputs.curseforge_project_id != '' }}
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
           curseforge-id: ${{ steps.props.outputs.curseforge_project_id }}
           curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
 
