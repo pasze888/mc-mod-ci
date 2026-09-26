@@ -74,14 +74,17 @@ jobs:
           INPUT_JAVA_VERSION: ${{ inputs.java-version }}
         run: |
           VERSION="$INPUT_JAVA_VERSION"
+          SOURCE="调用方输入"
           if [ -z "$VERSION" ] && [ -f gradle.properties ]; then
             VERSION="$(sed -nE 's/^[[:space:]]*(java_version|javaVersion)[[:space:]]*=[[:space:]]*//p' gradle.properties | tail -1 | tr -d '\r[:space:]')"
+            SOURCE="gradle.properties"
           fi
           if [ -z "$VERSION" ]; then
             VERSION="21"
+            SOURCE="默认值"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "使用 JDK $VERSION"
+          echo "使用 JDK $VERSION（来源：$SOURCE）"
 
       - name: Set up JDK ${{ steps.java.outputs.version }}
         uses: actions/setup-java@v6.0.0
