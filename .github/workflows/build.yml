@@ -6,10 +6,26 @@
 #     build:
 #       uses: pasze888/mc-mod-ci/.github/workflows/build.yml@main
 # 本工作流运行在被调用的模组仓库上下文中（github.* 指向调用方）。
+#
+# JDK 版本的决定顺序（分支制移植靠它：每条 MC 版本分支只改自己仓库的 gradle.properties，
+# caller 一个字都不用动）：
+#   1. 调用方传入的 java-version 输入；
+#   2. 该仓库 gradle.properties 里的 java_version / javaVersion；
+#   3. 回退 21。
+# 约定：模组把 java_version 写进 gradle.properties，并让它同时驱动 build.gradle 的 toolchain，
+# 使「CI 装的 JDK」与「编译用 Java」同源（参考 AnvilCraft / Apotheosis / Mekanism 的写法）。
+# 例外：若某分支的 Gradle 版本跑不了 toolchain 那个 Java（例如 wrapper < 9.1.0 却要 Java 25），
+# 用 java-version 输入单独指定 Gradle JVM。
 name: Build (reusable)
 
 on:
   workflow_call:
+    inputs:
+      java-version:
+        description: '覆盖 JDK 版本；留空则读仓库 gradle.properties 的 java_version/javaVersion，再回退 21'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -25,10 +41,26 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Set up JDK 21
+      - name: Resolve JDK version
+        id: java
+        shell: bash
+        env:
+          INPUT_JAVA_VERSION: ${{ inputs.java-version }}
+        run: |
+          VERSION="$INPUT_JAVA_VERSION"
+          if [ -z "$VERSION" ] && [ -f gradle.properties ]; then
+            VERSION="$(sed -nE 's/^[[:space:]]*(java_version|javaVersion)[[:space:]]*=[[:space:]]*//p' gradle.properties | tail -1 | tr -d '\r[:space:]')"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION="21"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "使用 JDK $VERSION"
+
+      - name: Set up JDK ${{ steps.java.outputs.version }}
         uses: actions/setup-java@v6.0.0
         with:
-          java-version: '21'
+          java-version: ${{ steps.java.outputs.version }}
           distribution: temurin
 
       - name: Setup Gradle

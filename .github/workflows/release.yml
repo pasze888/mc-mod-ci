@@ -9,10 +9,41 @@
 #   * CurseForge 是开关：仅当该仓库 gradle.properties 存在 curseforge_project_id 才上传，
 #     否则 mc-publish 只发 GitHub Release（少数模组开 CF，多数只发 GitHub）
 #   * changelog 由 mc-publish 从 commit 自动生成（Q8=A）
+#
+# JDK 与发布元数据：决定顺序同 build.yml（输入 > gradle.properties 的 java_version/javaVersion > 21），
+# 装出来的 JDK 与 mc-publish 的 java 字段取同一个值，避免二者漂移。
+#
+# 可选输入（都可不传；不传即维持 1.21.x + neoforge 现状，老 caller 无需改动）：
+#   java-version    覆盖 JDK 版本（一般不用传，交给 gradle.properties）
+#   loaders         mc-publish 的 loaders，默认 'neoforge'（多值用逗号分隔，下同）
+#   game-versions   mc-publish 的 game-versions，默认 '1.21.1'
+# 传入示例（26.x 分支，Java 用属性驱动时只需改 game-versions）：
+#   jobs:
+#     release:
+#       uses: pasze888/mc-mod-ci/.github/workflows/release.yml@main
+#       secrets: inherit
+#       with:
+#         game-versions: '26.1'
 name: Release (reusable)
 
 on:
   workflow_call:
+    inputs:
+      java-version:
+        description: '覆盖 JDK 版本；留空则读仓库 gradle.properties 的 java_version/javaVersion，再回退 21'
+        required: false
+        type: string
+        default: ''
+      loaders:
+        description: 'mc-publish 的 loaders，多值用逗号分隔'
+        required: false
+        type: string
+        default: 'neoforge'
+      game-versions:
+        description: 'mc-publish 的 game-versions，多值用逗号分隔'
+        required: false
+        type: string
+        default: '1.21.1'
 
 # GitHub Release / CurseForge 上传都需要写权限
 permissions:
@@ -36,10 +67,26 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Set up JDK 21
+      - name: Resolve JDK version
+        id: java
+        shell: bash
+        env:
+          INPUT_JAVA_VERSION: ${{ inputs.java-version }}
+        run: |
+          VERSION="$INPUT_JAVA_VERSION"
+          if [ -z "$VERSION" ] && [ -f gradle.properties ]; then
+            VERSION="$(sed -nE 's/^[[:space:]]*(java_version|javaVersion)[[:space:]]*=[[:space:]]*//p' gradle.properties | tail -1 | tr -d '\r[:space:]')"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION="21"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "使用 JDK $VERSION"
+
+      - name: Set up JDK ${{ steps.java.outputs.version }}
         uses: actions/setup-java@v6.0.0
         with:
-          java-version: '21'
+          java-version: ${{ steps.java.outputs.version }}
           distribution: temurin
 
       - name: Setup Gradle
@@ -99,9 +146,9 @@ jobs:
           name: ${{ steps.props.outputs.mod_name }} ${{ steps.version.outputs.version }}
           version: ${{ steps.version.outputs.version }}
           version-type: ${{ steps.version.outputs.version_type }}
-          loaders: neoforge
-          game-versions: 1.21.1
-          java: 21
+          loaders: ${{ inputs.loaders }}
+          game-versions: ${{ inputs.game-versions }}
+          java: ${{ steps.java.outputs.version }}
           environment: client | server
           fail-mode: fail
 
@@ -119,8 +166,8 @@ jobs:
           name: ${{ steps.props.outputs.mod_name }} ${{ steps.version.outputs.version }}
           version: ${{ steps.version.outputs.version }}
           version-type: ${{ steps.version.outputs.version_type }}
-          loaders: neoforge
-          game-versions: 1.21.1
-          java: 21
+          loaders: ${{ inputs.loaders }}
+          game-versions: ${{ inputs.game-versions }}
+          java: ${{ steps.java.outputs.version }}
           environment: client | server
           fail-mode: fail
